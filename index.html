@@ -1,0 +1,898 @@
+<title>Chilaquiles POS</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,800&family=Figtree:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+<style>
+/* Layout: barra superior fija + pestañas; en "Vender" una cuadrícula de botones y una barra de cobro fija abajo (estilo terminal POS). */
+:root{
+  --bg:#f4f6ef; --surface:#ffffff; --surface2:#eaede3; --line:#d9ddcf;
+  --fg:#1c2017; --muted:#626b5b;
+  --verde:#2c7a48; --roja:#bf3f2b; --totopo:#d99a24;
+  --ok:#2c7a48; --bad:#bf3f2b;
+  --f-display:'Bricolage Grotesque', 'Arial Black', system-ui, sans-serif;
+  --f-body:'Figtree', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --f-mono:'JetBrains Mono', ui-monospace, 'SFMono-Regular', Menlo, monospace;
+  /* colores de los botones de producto (iguales en tema claro y oscuro, texto blanco) */
+  --t-verde:#2e7d4f; --t-rojo:#bd3a2a; --t-naranja:#cf6a14; --t-mostaza:#a87d06;
+  --t-azul:#2d68ad; --t-morado:#7349ab; --t-rosa:#b83f73; --t-cafe:#80532a; --t-gris:#565e52;
+  color-scheme:light;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --bg:#121510; --surface:#1b1f18; --surface2:#242a20; --line:#323a2c;
+    --fg:#eef1e6; --muted:#9ba393; --verde:#52ad6f; --roja:#e2654f; --totopo:#e8b44e;
+    --ok:#52ad6f; --bad:#e2654f; color-scheme:dark;
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#121510; --surface:#1b1f18; --surface2:#242a20; --line:#323a2c;
+  --fg:#eef1e6; --muted:#9ba393; --verde:#52ad6f; --roja:#e2654f; --totopo:#e8b44e;
+  --ok:#52ad6f; --bad:#e2654f; color-scheme:dark;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font-family:var(--f-body);font-size:15px;line-height:1.4}
+button{font-family:inherit;color:inherit}
+button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid var(--totopo);outline-offset:2px}
+.num{font-variant-numeric:tabular-nums}
+
+/* Barra superior */
+.top{position:sticky;top:env(safe-area-inset-top,0px);z-index:50;background:var(--surface);border-bottom:1px solid var(--line)}
+.top-row{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:10px 16px}
+.brand{font-family:var(--f-display);font-weight:800;font-size:22px;letter-spacing:-0.5px;display:flex;align-items:center;gap:8px}
+.brand .salsas{display:inline-flex;gap:3px}
+.brand .salsas i{width:10px;height:10px;border-radius:50%;display:block}
+.dot{width:8px;height:8px;border-radius:50%;background:var(--muted);display:inline-block}
+.dot.syncing{background:var(--totopo)} .dot.synced{background:var(--ok)} .dot.error{background:var(--bad)}
+.fecha-box{display:flex;align-items:center;gap:8px}
+.fecha-box .dia{font-family:var(--f-mono);font-size:11px;text-transform:uppercase;letter-spacing:1px;color:var(--muted)}
+input,select{background:var(--surface2);border:1px solid var(--line);color:var(--fg);border-radius:8px;padding:8px 10px;font:inherit;font-size:14px;min-width:0}
+.tabs{display:flex;overflow-x:auto;padding:0 8px;gap:2px}
+.tab{background:none;border:none;border-bottom:3px solid transparent;padding:10px 12px;font-weight:600;font-size:14px;color:var(--muted);cursor:pointer;white-space:nowrap}
+.tab.on{color:var(--fg);border-bottom-color:var(--verde)}
+.modo{font-family:var(--f-mono);font-size:10px;letter-spacing:.5px;text-transform:uppercase;padding:3px 7px;border-radius:99px;background:var(--surface2);color:var(--muted)}
+
+.wrap{max-width:820px;margin:0 auto;padding-inline:16px;padding-block:16px 24px}
+.sec{display:none} .sec.on{display:block}
+h2{font-family:var(--f-display);font-weight:800;font-size:20px;margin:0 0 12px;text-wrap:balance}
+.lbl{font-family:var(--f-mono);font-size:10.5px;letter-spacing:1px;text-transform:uppercase;color:var(--muted)}
+.hint{color:var(--muted);font-size:13px}
+
+/* Chips de categoría */
+.chips{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px}
+.chip{border:1px solid var(--line);background:var(--surface);padding:6px 12px;border-radius:99px;font-size:13px;font-weight:600;cursor:pointer}
+.chip.on{background:var(--fg);color:var(--bg);border-color:var(--fg)}
+
+/* Cuadrícula de botones de producto */
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:10px}
+@media (max-width:420px){.grid{grid-template-columns:1fr 1fr}}
+.tile{position:relative;border:none;border-radius:12px;min-height:104px;padding:12px;text-align:left;color:#fff;cursor:pointer;display:flex;flex-direction:column;justify-content:space-between;gap:6px;transition:transform .08s ease, filter .15s}
+.tile:active{transform:scale(.96)}
+.tile:hover{filter:brightness(1.07)}
+.tile .em{font-size:26px;line-height:1}
+.tile .nm{font-weight:700;font-size:15px;line-height:1.2;overflow-wrap:anywhere}
+.tile .pr{font-family:var(--f-mono);font-size:13px;opacity:.92}
+.tile .qty{position:absolute;top:8px;right:8px;min-width:26px;height:26px;border-radius:99px;background:#fff;color:#1c2017;font-weight:700;font-size:13px;display:flex;align-items:center;justify-content:center;padding:0 7px}
+.tile.libre{background:var(--surface);color:var(--fg);border:2px dashed var(--line)}
+.tile.libre .pr{color:var(--muted)}
+
+/* Ticket */
+.ticket{margin-top:16px;background:var(--surface);border:1px solid var(--line);border-radius:12px;overflow:hidden}
+.ticket-head{display:flex;justify-content:space-between;align-items:center;padding:10px 14px;border-bottom:1px solid var(--line)}
+.linkbtn{background:none;border:none;color:var(--bad);font-weight:600;font-size:13px;cursor:pointer;padding:4px}
+.tline{display:grid;grid-template-columns:1fr auto auto;gap:10px;align-items:center;padding:8px 14px;border-bottom:1px solid var(--line)}
+.tline:last-child{border-bottom:none}
+.tline .n{font-weight:600;min-width:0;overflow-wrap:anywhere}
+.tline .u{font-size:12px;color:var(--muted);font-family:var(--f-mono)}
+.stepper{display:flex;align-items:center;gap:6px}
+.stepper button{width:32px;height:32px;border-radius:50%;border:1px solid var(--line);background:var(--surface2);font-size:18px;font-weight:700;cursor:pointer;line-height:1}
+.stepper span{min-width:22px;text-align:center;font-weight:700}
+.tline .t{font-family:var(--f-mono);font-weight:600;min-width:64px;text-align:right}
+.empty{padding:22px 14px;text-align:center;color:var(--muted);font-size:13px}
+
+/* Barra de cobro fija */
+#sec-vender{padding-bottom:92px}
+.paybar{position:fixed;left:0;right:0;bottom:0;z-index:40;background:var(--surface);border-top:1px solid var(--line);padding:10px 16px calc(10px + env(safe-area-inset-bottom,0px))}
+.paybar-in{max-width:820px;margin:0 auto;display:flex;gap:12px;align-items:center}
+.paybar .sum{flex:0 0 auto}
+.paybar .sum b{font-family:var(--f-display);font-size:24px;display:block;line-height:1.1}
+.btn{border:none;border-radius:10px;padding:14px 18px;font-weight:700;font-size:15px;cursor:pointer}
+.btn-go{background:var(--verde);color:#fff;flex:1}
+.btn-go:disabled{background:var(--surface2);color:var(--muted);cursor:not-allowed}
+.btn-ghost{background:var(--surface2);color:var(--fg)}
+.btn-danger{background:transparent;border:1px solid var(--bad);color:var(--bad)}
+.btn-block{width:100%}
+
+/* Hojas (modales desde abajo) */
+.sheet-bg{position:fixed;inset:0;z-index:100;background:rgba(10,12,8,.55);display:flex;align-items:flex-end;justify-content:center}
+.sheet{background:var(--surface);width:100%;max-width:560px;border-radius:16px 16px 0 0;padding:18px 16px calc(18px + env(safe-area-inset-bottom,0px));max-height:90vh;overflow:auto;animation:up .2s ease}
+@keyframes up{from{transform:translateY(40px);opacity:.6}to{transform:none;opacity:1}}
+@media (prefers-reduced-motion:reduce){.sheet{animation:none}.tile{transition:none}}
+.sheet-h{display:flex;justify-content:space-between;align-items:center;margin-bottom:12px}
+.sheet-h h3{font-family:var(--f-display);font-size:19px;margin:0}
+.x{background:none;border:none;font-size:26px;line-height:1;cursor:pointer;color:var(--muted);padding:2px 6px}
+.big-total{font-family:var(--f-display);font-weight:800;font-size:44px;text-align:center;margin:4px 0 14px}
+.pay-opts{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:8px;margin-bottom:14px}
+.pay-opt{border:2px solid var(--line);background:var(--surface2);border-radius:10px;padding:14px 8px;font-weight:700;cursor:pointer}
+.pay-opt.on{border-color:var(--verde);background:color-mix(in srgb, var(--verde) 14%, var(--surface))}
+.bills{display:flex;gap:6px;flex-wrap:wrap;margin:8px 0}
+.bills button{border:1px solid var(--line);background:var(--surface);border-radius:8px;padding:8px 12px;font-family:var(--f-mono);font-weight:600;cursor:pointer}
+.cambio{display:flex;justify-content:space-between;align-items:baseline;padding:10px 12px;background:var(--surface2);border-radius:10px;margin-bottom:14px}
+.cambio b{font-family:var(--f-display);font-size:26px}
+.field{display:flex;flex-direction:column;gap:5px;margin-bottom:12px}
+.field input,.field select{width:100%}
+.row2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.swatches{display:flex;gap:8px;flex-wrap:wrap}
+.sw{width:36px;height:36px;border-radius:9px;border:3px solid transparent;cursor:pointer}
+.sw.on{border-color:var(--fg)}
+.keypad{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin:10px 0 14px}
+.keypad button{padding:16px 0;font-size:22px;font-weight:700;border-radius:10px;border:1px solid var(--line);background:var(--surface2);cursor:pointer}
+.check{display:flex;align-items:center;gap:8px;margin-bottom:12px;font-size:14px}
+.check input{width:20px;height:20px}
+
+/* Lista de productos (registro) */
+.plist{display:flex;flex-direction:column;gap:8px}
+.pitem{display:grid;grid-template-columns:44px 1fr auto;gap:12px;align-items:center;background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:8px 10px}
+.pitem .chipc{width:44px;height:44px;border-radius:9px;display:flex;align-items:center;justify-content:center;font-size:22px;color:#fff}
+.pitem .info{min-width:0}
+.pitem .info b{display:block;overflow-wrap:anywhere}
+.pitem .info span{font-size:12px;color:var(--muted);font-family:var(--f-mono)}
+.pitem.off{opacity:.55}
+.pitem .acts{display:flex;gap:4px}
+.icon-btn{width:34px;height:34px;border-radius:8px;border:1px solid var(--line);background:var(--surface2);cursor:pointer;font-size:14px}
+.note{background:color-mix(in srgb, var(--totopo) 16%, var(--surface));border:1px solid color-mix(in srgb, var(--totopo) 45%, var(--line));border-radius:10px;padding:10px 12px;font-size:13px;margin-bottom:14px}
+
+/* Gastos */
+.qgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(104px,1fr));gap:6px;margin-bottom:14px}
+.qbtn{border:1px solid var(--line);background:var(--surface);border-radius:9px;padding:10px 6px;font-size:13px;font-weight:600;cursor:pointer}
+.qbtn:hover{border-color:var(--roja)}
+.gtable{background:var(--surface);border:1px solid var(--line);border-radius:12px;overflow:hidden;margin-bottom:10px}
+.grow{display:grid;grid-template-columns:minmax(0,1fr) 58px 76px 72px 30px;gap:6px;align-items:center;padding:6px 10px;border-bottom:1px solid var(--line)}
+.grow:last-child{border-bottom:none}
+.grow.head{background:var(--surface2)}
+.grow input{padding:6px 7px;font-size:13px;width:100%}
+.grow .tt{font-family:var(--f-mono);font-weight:600;text-align:right;color:var(--bad);font-size:13px}
+.grow .del{background:none;border:none;font-size:20px;color:var(--muted);cursor:pointer}
+.gfoot{display:flex;justify-content:space-between;align-items:center;background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:12px 14px;margin:10px 0}
+.gfoot b{font-family:var(--f-display);font-size:26px;color:var(--bad)}
+.add-row{width:100%;border:1px dashed var(--line);background:none;border-radius:9px;padding:10px;font-weight:600;color:var(--muted);cursor:pointer}
+
+/* Dashboard */
+.kpis{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:16px}
+.kpi{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:12px 14px;min-width:0}
+.kpi.hero{grid-column:1/-1;display:flex;justify-content:space-between;align-items:flex-end;gap:12px;flex-wrap:wrap}
+.kpi .v{font-family:var(--f-display);font-weight:800;font-size:26px;line-height:1.1;margin-top:4px;overflow-wrap:anywhere}
+.kpi.hero .v{font-size:40px}
+.kpi .s{font-size:12px;color:var(--muted);font-family:var(--f-mono);margin-top:2px}
+.pos{color:var(--ok)} .neg{color:var(--bad)}
+@media (max-width:560px){.kpis{grid-template-columns:1fr 1fr}}
+.panel{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:14px;margin-bottom:14px}
+.panel h4{margin:0 0 12px;font-size:14px}
+.days{display:grid;grid-template-columns:repeat(var(--n,5),1fr);gap:8px;align-items:end;height:170px}
+.dcol{display:flex;flex-direction:column;align-items:center;justify-content:flex-end;height:100%;gap:4px;min-width:0}
+.dcol .amt{font-family:var(--f-mono);font-size:11px;color:var(--muted);white-space:nowrap}
+.dcol .bar{width:100%;max-width:56px;border-radius:6px 6px 2px 2px;background:var(--verde);min-height:3px}
+.dcol .bar.sel{background:var(--totopo)}
+.dcol .dn{font-weight:700;font-size:12px}
+.dcol .dd{font-family:var(--f-mono);font-size:10px;color:var(--muted)}
+.hrow{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:4px 10px;align-items:center;margin-bottom:10px}
+.hrow:last-child{margin-bottom:0}
+.hrow .n{font-size:13px;font-weight:600;overflow-wrap:anywhere}
+.hrow .val{font-family:var(--f-mono);font-size:12px;text-align:right}
+.hrow .track{grid-column:1/-1;height:6px;background:var(--surface2);border-radius:99px;overflow:hidden}
+.hrow .fill{height:100%;border-radius:99px;background:var(--verde)}
+.hrow .fill.r{background:var(--roja)}
+.two{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+@media (max-width:620px){.two{grid-template-columns:1fr}}
+
+/* Bitácora */
+.log{display:flex;flex-direction:column;gap:6px}
+.lrow{display:grid;grid-template-columns:8px minmax(0,1fr) auto;gap:10px;align-items:center;background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:10px 12px;cursor:pointer}
+.lrow .d{width:8px;height:8px;border-radius:50%}
+.lrow .c{font-weight:600;font-size:14px;overflow-wrap:anywhere}
+.lrow .m{font-size:11.5px;color:var(--muted);font-family:var(--f-mono);margin-top:2px}
+.lrow .a{font-family:var(--f-mono);font-weight:700}
+
+.toast{position:fixed;left:50%;bottom:calc(100px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);background:var(--fg);color:var(--bg);padding:10px 16px;border-radius:10px;font-weight:600;font-size:14px;z-index:200;max-width:calc(100% - 32px);text-align:center;opacity:0;pointer-events:none;transition:opacity .2s}
+.toast.show{opacity:1}
+</style>
+
+<header class="top">
+  <div class="top-row">
+    <div class="brand"><span class="salsas"><i style="background:var(--verde)"></i><i style="background:var(--roja)"></i></span><span id="brand-name">Chilaquiles</span> <span class="dot" id="dot" title="Estado de sincronización"></span></div>
+    <div class="fecha-box">
+      <span class="dia" id="dia-label">—</span>
+      <input type="date" id="fecha" aria-label="Día de operación" onchange="cambiarFecha(this.value)">
+    </div>
+  </div>
+  <nav class="tabs" role="tablist">
+    <button class="tab on" data-tab="vender" onclick="showTab('vender')">Vender</button>
+    <button class="tab" data-tab="dash" onclick="showTab('dash')">Dashboard</button>
+    <button class="tab" data-tab="gastos" onclick="showTab('gastos')">Gastos</button>
+    <button class="tab" data-tab="log" onclick="showTab('log')">Bitácora</button>
+    <button class="tab" data-tab="prods" onclick="showTab('prods')">Productos</button>
+  </nav>
+</header>
+
+<main class="wrap">
+  <!-- VENDER -->
+  <section class="sec on" id="sec-vender">
+    <div class="chips" id="cat-chips"></div>
+    <div class="grid" id="tiles"></div>
+    <div class="ticket">
+      <div class="ticket-head"><span class="lbl">Ticket actual</span><button class="linkbtn" onclick="vaciarTicket()">Vaciar</button></div>
+      <div id="ticket-lines"></div>
+    </div>
+  </section>
+
+  <!-- DASHBOARD -->
+  <section class="sec" id="sec-dash">
+    <h2 id="dash-title">Semana</h2>
+    <div class="kpis">
+      <div class="kpi hero">
+        <div><div class="lbl">Utilidad de la semana</div><div class="v num" id="k-util">$0</div></div>
+        <div class="s" id="k-util-s"></div>
+      </div>
+      <div class="kpi"><div class="lbl">Ingresos</div><div class="v num pos" id="k-ing">$0</div></div>
+      <div class="kpi"><div class="lbl">Gastos</div><div class="v num neg" id="k-gas">$0</div></div>
+      <div class="kpi"><div class="lbl">Ventas</div><div class="v num" id="k-ven">0</div></div>
+      <div class="kpi"><div class="lbl">Ticket promedio</div><div class="v num" id="k-tp">$0</div></div>
+    </div>
+    <div class="panel"><h4>Ingresos por día</h4><div class="days" id="d-days"></div></div>
+    <div class="two">
+      <div class="panel"><h4>Productos más vendidos</h4><div id="d-prods"></div></div>
+      <div>
+        <div class="panel"><h4>Por forma de pago</h4><div id="d-pagos"></div></div>
+        <div class="panel"><h4>Gastos por categoría</h4><div id="d-cats"></div></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- GASTOS -->
+  <section class="sec" id="sec-gastos">
+    <h2>Registrar gastos</h2>
+    <div class="row2" style="margin-bottom:12px">
+      <div class="field"><label class="lbl" for="g-cat">Categoría</label><select id="g-cat" onchange="renderQuickGastos()"></select></div>
+      <div class="field"><label class="lbl" for="g-pago">Pagado con</label><select id="g-pago"></select></div>
+    </div>
+    <div class="lbl" style="margin-bottom:6px">Toca para agregar</div>
+    <div class="qgrid" id="g-quick"></div>
+    <div class="gtable">
+      <div class="grow head"><span class="lbl">Concepto</span><span class="lbl">Cant.</span><span class="lbl">$/unidad</span><span class="lbl" style="text-align:right">Total</span><span></span></div>
+      <div id="g-rows"></div>
+    </div>
+    <button class="add-row" onclick="addGastoRow('')">+ Agregar renglón</button>
+    <div class="gfoot"><div><div class="lbl">Total a registrar</div><b class="num" id="g-total">$0</b></div><span class="hint" id="g-count">0 conceptos</span></div>
+    <button class="btn btn-go btn-block" style="background:var(--roja)" onclick="guardarGastos()">Guardar gastos</button>
+  </section>
+
+  <!-- BITÁCORA -->
+  <section class="sec" id="sec-log">
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:12px;flex-wrap:wrap">
+      <h2 style="margin:0">Bitácora</h2>
+      <select id="log-filter" onchange="renderLog()" aria-label="Filtrar bitácora">
+        <option value="all">Toda la semana</option>
+        <option value="dia">Solo el día seleccionado</option>
+        <option value="ingreso">Solo ventas</option>
+        <option value="egreso">Solo gastos</option>
+      </select>
+    </div>
+    <div class="log" id="log"></div>
+  </section>
+
+  <!-- PRODUCTOS -->
+  <section class="sec" id="sec-prods">
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:12px">
+      <h2 style="margin:0">Productos</h2>
+      <button class="btn btn-go" style="flex:0 0 auto;padding:10px 14px" onclick="abrirProducto()">+ Nuevo producto</button>
+    </div>
+    <div class="note" id="seed-note">Los productos y precios iniciales son de ejemplo. Toca cualquiera para cambiar nombre, precio, color o categoría.</div>
+    <div class="plist" id="plist"></div>
+  </section>
+</main>
+
+<div class="paybar" id="paybar">
+  <div class="paybar-in">
+    <div class="sum"><span class="lbl" id="pb-count">0 artículos</span><b class="num" id="pb-total">$0</b></div>
+    <button class="btn btn-go" id="btn-cobrar" onclick="abrirCobro()" disabled>Cobrar</button>
+  </div>
+</div>
+
+<div id="sheet-root"></div>
+<div class="toast" id="toast" role="status"></div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
+<script>
+// ════════════════════════════════════════════════════════════════
+//  CONFIGURACIÓN — lo único que normalmente vas a cambiar
+// ════════════════════════════════════════════════════════════════
+const NEGOCIO = 'Chilaquiles';           // nombre que aparece arriba
+
+// Conexión a Supabase (proyecto "chilaquiles").
+// La "publishable key" es pública por diseño: va en el navegador. Lo que protege
+// los datos son las reglas RLS de la base. NUNCA pongas aquí la "secret key".
+// Si pones SUPABASE = null, la app guarda todo solo en este navegador (modo local).
+const SUPABASE = {
+  url: 'https://twllrejigwroadigkwjl.supabase.co',
+  key: 'sb_publishable_Tdx3Gv0pfV31R57StJiUTQ_aAAcd5Ow',
+};
+
+const PAGOS = ['Efectivo', 'Tarjeta', 'Transferencia'];
+const CATS_PROD = ['Platillos', 'Extras', 'Bebidas'];
+const GASTO_CATS = {
+  'Insumos':     ['Tortillas','Totopos','Tomate verde','Jitomate','Chile serrano','Chile guajillo','Cebolla','Ajo','Cilantro','Crema','Queso fresco','Huevo','Pollo','Frijoles','Aceite','Naranjas','Café','Azúcar'],
+  'Operativos':  ['Gas','Desechables','Bolsas','Servilletas','Limpieza','Agua garrafón','Transporte'],
+  'Nómina':      [],
+  'Personales':  ['Comida','Transporte'],
+};
+const COLORES = ['verde','rojo','naranja','mostaza','azul','morado','rosa','cafe','gris'];
+
+// Productos de ejemplo (solo se cargan la primera vez, luego los editas en la app)
+const SEED = [
+  {id:'p_verdes',   name:'Verdes',            price:85,  color:'verde',   emoji:'🟢', cat:'Platillos', orden:1},
+  {id:'p_rojos',    name:'Rojos',             price:85,  color:'rojo',    emoji:'🔴', cat:'Platillos', orden:2},
+  {id:'p_divorc',   name:'Divorciados',       price:95,  color:'naranja', emoji:'💔', cat:'Platillos', orden:3},
+  {id:'p_v_pollo',  name:'Verdes con pollo',  price:110, color:'verde',   emoji:'🍗', cat:'Platillos', orden:4},
+  {id:'p_r_pollo',  name:'Rojos con pollo',   price:110, color:'rojo',    emoji:'🍗', cat:'Platillos', orden:5},
+  {id:'p_v_huevo',  name:'Verdes con huevo',  price:100, color:'verde',   emoji:'🍳', cat:'Platillos', orden:6},
+  {id:'p_r_huevo',  name:'Rojos con huevo',   price:100, color:'rojo',    emoji:'🍳', cat:'Platillos', orden:7},
+  {id:'p_x_pollo',  name:'Extra pollo',       price:30,  color:'mostaza', emoji:'➕', cat:'Extras',    orden:8},
+  {id:'p_x_huevo',  name:'Extra huevo',       price:15,  color:'mostaza', emoji:'➕', cat:'Extras',    orden:9},
+  {id:'p_frijol',   name:'Frijoles',          price:20,  color:'cafe',    emoji:'🫘', cat:'Extras',    orden:10},
+  {id:'p_cafe',     name:'Café de olla',      price:30,  color:'cafe',    emoji:'☕', cat:'Bebidas',   orden:11},
+  {id:'p_jugo',     name:'Jugo de naranja',   price:40,  color:'naranja', emoji:'🍊', cat:'Bebidas',   orden:12},
+  {id:'p_agua',     name:'Agua fresca',       price:30,  color:'azul',    emoji:'🥤', cat:'Bebidas',   orden:13},
+].map(p => ({...p, activo:true}));
+
+// ════════════════════════════════════════════════════════════════
+//  UTILIDADES
+// ════════════════════════════════════════════════════════════════
+const $ = id => document.getElementById(id);
+const fmt = n => '$' + Math.round(n || 0).toLocaleString('es-MX');
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+const DIAS = ['Domingo','Lunes','Martes','Miércoles','Jueves','Viernes','Sábado'];
+
+// Fecha local en formato AAAA-MM-DD (no usamos toISOString porque convierte a UTC
+// y después de las 6pm en CDMX te daría el día siguiente).
+function fechaLocal(d = new Date()) {
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+}
+function parseFecha(s) { const [y,m,d] = s.split('-').map(Number); return new Date(y, m-1, d, 12); }
+function sumarDias(s, n) { const d = parseFecha(s); d.setDate(d.getDate() + n); return fechaLocal(d); }
+// Lunes de la semana de una fecha → identificador de semana
+function lunesDe(s) { const d = parseFecha(s); const dow = d.getDay(); d.setDate(d.getDate() - (dow === 0 ? 6 : dow - 1)); return fechaLocal(d); }
+
+let toastT;
+function toast(msg) { const t = $('toast'); t.textContent = msg; t.classList.add('show'); clearTimeout(toastT); toastT = setTimeout(() => t.classList.remove('show'), 2400); }
+function sync(s) { $('dot').className = 'dot ' + s; }
+
+const LS = {
+  get(k, def) { try { const v = localStorage.getItem(k); return v ? JSON.parse(v) : def; } catch (e) { return def; } },
+  set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) {} },
+};
+
+// ════════════════════════════════════════════════════════════════
+//  ALMACENAMIENTO (adaptador): la app habla con "store" y no le importa
+//  si detrás está Supabase o el navegador.
+// ════════════════════════════════════════════════════════════════
+function crearStoreLocal() {
+  let productos = LS.get('chq_productos', null);
+  let movs = LS.get('chq_movs', []);
+  const prodCbs = []; let movSub = null;
+  const guardar = () => { LS.set('chq_productos', productos); LS.set('chq_movs', movs); };
+  const emitP = () => prodCbs.forEach(cb => cb(productos.map(p => ({...p}))));
+  const emitM = () => { if (movSub) movSub.cb(movs.filter(m => m.semana === movSub.semana).map(m => ({...m}))); };
+  return {
+    modo: 'local',
+    onProductos(cb) { prodCbs.push(cb); if (!productos) { productos = SEED.map(p => ({...p})); guardar(); } cb(productos.map(p => ({...p}))); },
+    async saveProducto(p) { const i = productos.findIndex(x => x.id === p.id); if (i >= 0) productos[i] = p; else productos.push(p); guardar(); emitP(); },
+    async deleteProducto(id) { productos = productos.filter(p => p.id !== id); guardar(); emitP(); },
+    onMovimientos(semana, cb) { movSub = {semana, cb}; emitM(); return () => { movSub = null; }; },
+    async addMov(m) { movs.push({...m, _id: uid()}); guardar(); emitM(); },
+    async updateMov(id, patch) { const m = movs.find(x => x._id === id); if (m) Object.assign(m, patch); guardar(); emitM(); },
+    async deleteMov(id) { movs = movs.filter(m => m._id !== id); guardar(); emitM(); },
+  };
+}
+
+// Supabase = base de datos Postgres en la nube. A diferencia de Firestore, las
+// tablas tienen columnas fijas, así que aquí "traducimos" entre los nombres de la
+// app (createdAt, _id) y los de la base (created_at, id).
+function crearStoreSupabase(cfg) {
+  if (!window.supabase) throw new Error('No cargó la librería de Supabase');
+  const sb = window.supabase.createClient(cfg.url, cfg.key);
+  const OUTBOX = 'chq_pendientes';   // ventas/gastos que no se pudieron subir (sin internet)
+
+  const aMov = r => ({
+    _id: r.id, type: r.type, categoria: r.categoria, concepto: r.concepto, items: r.items,
+    monto: Number(r.monto), pago: r.pago, fecha: r.fecha, semana: r.semana, hora: r.hora,
+    recibido: r.recibido == null ? undefined : Number(r.recibido),
+    cambio: r.cambio == null ? undefined : Number(r.cambio), createdAt: Number(r.created_at),
+  });
+  const aFila = m => ({
+    id: m._id, type: m.type, categoria: m.categoria, concepto: m.concepto, items: m.items ?? null,
+    monto: m.monto, pago: m.pago, fecha: m.fecha, semana: m.semana, hora: m.hora ?? null,
+    recibido: m.recibido ?? null, cambio: m.cambio ?? null, created_at: m.createdAt,
+  });
+  const aProd = r => ({...r, price: Number(r.price)});
+  const filaProd = p => ({id: p.id, name: p.name, price: p.price, color: p.color, emoji: p.emoji || '',
+    cat: p.cat, activo: p.activo !== false, orden: p.orden || 0, updated_at: new Date().toISOString()});
+
+  const pendientes = () => LS.get(OUTBOX, []);
+  const estadoSync = () => sync(pendientes().length ? 'syncing' : 'synced');
+  async function op(promesa, msg = 'No se pudo guardar. Revisa la conexión.') {
+    sync('syncing');
+    const { error } = await promesa;
+    if (error) { sync('error'); toast(msg); console.error(error); return false; }
+    estadoSync(); return true;
+  }
+
+  let prodCb = null, movSub = null, timer = null;
+  async function cargarProductos() {
+    if (!prodCb) return;
+    const { data, error } = await sb.from('productos').select('*').order('orden');
+    if (error) { sync('error'); console.error(error); return; }
+    if (!data.length) { await sb.from('productos').upsert(SEED.map(filaProd)); return cargarProductos(); }
+    prodCb(data.map(aProd));
+  }
+  async function cargarSemana() {
+    if (!movSub) return;
+    const { semana, cb } = movSub;
+    const { data, error } = await sb.from('movimientos').select('*').eq('semana', semana);
+    if (error) { sync('error'); console.error(error); return; }
+    const ids = new Set(data.map(r => r.id));
+    // Las que siguen en la cola local también se muestran, para que no "desaparezcan".
+    const locales = pendientes().filter(m => m.semana === semana && !ids.has(m._id));
+    if (movSub && movSub.semana === semana) cb([...data.map(aMov), ...locales]);
+    estadoSync();
+  }
+  const recargar = () => { clearTimeout(timer); timer = setTimeout(() => { cargarProductos(); cargarSemana(); }, 250); };
+
+  // Tiempo real: cuando otro teléfono registra algo, Supabase nos avisa y recargamos.
+  sb.channel('pos')
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'productos' }, recargar)
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'movimientos' }, recargar)
+    .subscribe();
+  // Al volver a la app (teléfono bloqueado, cambio de app) recargamos por si se perdió algún aviso.
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) { subirPendientes(); recargar(); } });
+
+  async function subirPendientes() {
+    const cola = pendientes(); if (!cola.length) return;
+    const { error } = await sb.from('movimientos').upsert(cola.map(aFila), { onConflict: 'id', ignoreDuplicates: true });
+    if (!error) { LS.set(OUTBOX, []); toast(`${cola.length} movimiento${cola.length === 1 ? '' : 's'} pendiente${cola.length === 1 ? '' : 's'} subido${cola.length === 1 ? '' : 's'}`); recargar(); }
+    estadoSync();
+  }
+  window.addEventListener('online', subirPendientes);
+  setInterval(subirPendientes, 30000);
+  subirPendientes();
+
+  return {
+    modo: 'supabase',
+    onProductos(cb) { prodCb = cb; cargarProductos(); },
+    async saveProducto(p) { if (await op(sb.from('productos').upsert(filaProd(p)))) recargar(); },
+    async deleteProducto(id) { if (await op(sb.from('productos').delete().eq('id', id))) recargar(); },
+    onMovimientos(semana, cb) { movSub = { semana, cb }; cargarSemana(); return () => { movSub = null; }; },
+    async addMov(m) {
+      // El id se genera en el teléfono: así, si se reintenta, nunca se duplica.
+      const mov = { ...m, _id: crypto.randomUUID() };
+      if (movSub && movSub.semana === mov.semana) { state.movs = [...state.movs, mov]; renderDash(); renderLog(); }
+      sync('syncing');
+      const { error } = await sb.from('movimientos').insert(aFila(mov));
+      if (error) {
+        console.error(error);
+        LS.set(OUTBOX, [...pendientes(), mov]);
+        toast('Sin conexión: quedó guardado en este teléfono y se subirá solo');
+      }
+      estadoSync();
+    },
+    async updateMov(id, patch) {
+      const fila = {};
+      ['concepto','monto','pago','fecha','semana'].forEach(k => { if (k in patch) fila[k] = patch[k]; });
+      if (await op(sb.from('movimientos').update(fila).eq('id', id))) recargar();
+    },
+    async deleteMov(id) {
+      LS.set(OUTBOX, pendientes().filter(m => m._id !== id));
+      if (await op(sb.from('movimientos').delete().eq('id', id))) recargar();
+    },
+  };
+}
+
+// ════════════════════════════════════════════════════════════════
+//  ESTADO
+// ════════════════════════════════════════════════════════════════
+let store;
+const state = {
+  fecha: fechaLocal(),
+  productos: [],
+  movs: [],            // movimientos de la semana de "fecha"
+  ticket: [],          // [{key, id, name, price, qty}]
+  catFiltro: 'Todos',
+  gastoRows: [],
+};
+let unsubMovs = null;
+
+// ════════════════════════════════════════════════════════════════
+//  NAVEGACIÓN Y FECHA
+// ════════════════════════════════════════════════════════════════
+function showTab(t) {
+  document.querySelectorAll('.tab').forEach(b => b.classList.toggle('on', b.dataset.tab === t));
+  document.querySelectorAll('.sec').forEach(s => s.classList.toggle('on', s.id === 'sec-' + t));
+  $('paybar').hidden = t !== 'vender';
+  if (t === 'dash') renderDash();
+  if (t === 'log') renderLog();
+  if (t === 'prods') renderProductos();
+  if (t === 'gastos') { renderQuickGastos(); renderGastoRows(); }
+}
+function cambiarFecha(v) {
+  if (!v) return;
+  const semanaAntes = lunesDe(state.fecha);
+  state.fecha = v;
+  $('dia-label').textContent = DIAS[parseFecha(v).getDay()];
+  if (lunesDe(v) !== semanaAntes || !unsubMovs) suscribirSemana();
+  else { renderDash(); renderLog(); }
+}
+function suscribirSemana() {
+  if (unsubMovs) unsubMovs();
+  unsubMovs = store.onMovimientos(lunesDe(state.fecha), movs => { state.movs = movs; renderDash(); renderLog(); });
+}
+
+// ════════════════════════════════════════════════════════════════
+//  VENDER (botones tipo terminal)
+// ════════════════════════════════════════════════════════════════
+const activos = () => state.productos.filter(p => p.activo !== false).sort((a,b) => (a.orden||0) - (b.orden||0));
+
+function renderChips() {
+  const cats = ['Todos', ...CATS_PROD.filter(c => activos().some(p => p.cat === c))];
+  if (!cats.includes(state.catFiltro)) state.catFiltro = 'Todos';
+  $('cat-chips').innerHTML = cats.map(c => `<button class="chip ${c === state.catFiltro ? 'on' : ''}" onclick="filtrarCat('${c}')">${c}</button>`).join('');
+}
+function filtrarCat(c) { state.catFiltro = c; renderChips(); renderTiles(); }
+
+function renderTiles() {
+  const lista = activos().filter(p => state.catFiltro === 'Todos' || p.cat === state.catFiltro);
+  const qtyDe = id => state.ticket.filter(l => l.id === id).reduce((s, l) => s + l.qty, 0);
+  $('tiles').innerHTML = lista.map(p => {
+    const q = qtyDe(p.id);
+    return `<button class="tile" style="background:var(--t-${p.color || 'gris'})" onclick="agregar('${p.id}')" aria-label="Agregar ${esc(p.name)}">
+      ${q ? `<span class="qty">${q}</span>` : ''}
+      <span class="em">${esc(p.emoji || '')}</span>
+      <span><span class="nm">${esc(p.name)}</span><br><span class="pr num">${fmt(p.price)}</span></span>
+    </button>`;
+  }).join('') + `<button class="tile libre" onclick="abrirMontoLibre()"><span class="em">⌨️</span><span><span class="nm">Monto libre</span><br><span class="pr">Cobrar otra cosa</span></span></button>`;
+}
+
+function agregar(id) {
+  const p = state.productos.find(x => x.id === id); if (!p) return;
+  const l = state.ticket.find(x => x.key === id);
+  if (l) l.qty++; else state.ticket.push({key: id, id, name: p.name, price: p.price, qty: 1});
+  if (navigator.vibrate) try { navigator.vibrate(12); } catch (e) {}
+  renderTicket(); renderTiles();
+}
+function cambiarQty(key, d) {
+  const l = state.ticket.find(x => x.key === key); if (!l) return;
+  l.qty += d; if (l.qty <= 0) state.ticket = state.ticket.filter(x => x.key !== key);
+  renderTicket(); renderTiles();
+}
+function vaciarTicket() { state.ticket = []; renderTicket(); renderTiles(); }
+const totalTicket = () => state.ticket.reduce((s, l) => s + l.qty * l.price, 0);
+
+function renderTicket() {
+  const box = $('ticket-lines');
+  if (!state.ticket.length) box.innerHTML = '<div class="empty">Toca un producto para agregarlo al ticket.</div>';
+  else box.innerHTML = state.ticket.map(l => `
+    <div class="tline">
+      <div class="n">${esc(l.name)}<div class="u num">${fmt(l.price)} c/u</div></div>
+      <div class="stepper"><button onclick="cambiarQty('${l.key}',-1)" aria-label="Quitar uno">−</button><span class="num">${l.qty}</span><button onclick="cambiarQty('${l.key}',1)" aria-label="Agregar uno">+</button></div>
+      <div class="t num">${fmt(l.qty * l.price)}</div>
+    </div>`).join('');
+  const n = state.ticket.reduce((s, l) => s + l.qty, 0);
+  $('pb-count').textContent = `${n} artículo${n === 1 ? '' : 's'}`;
+  $('pb-total').textContent = fmt(totalTicket());
+  $('btn-cobrar').disabled = !n;
+  $('btn-cobrar').textContent = n ? `Cobrar ${fmt(totalTicket())}` : 'Cobrar';
+}
+
+// ── Hojas (modales) ──
+function abrirHoja(html) {
+  $('sheet-root').innerHTML = `<div class="sheet-bg" onclick="if(event.target===this)cerrarHoja()"><div class="sheet" role="dialog" aria-modal="true">${html}</div></div>`;
+}
+function cerrarHoja() { $('sheet-root').innerHTML = ''; }
+const hojaHead = t => `<div class="sheet-h"><h3>${t}</h3><button class="x" onclick="cerrarHoja()" aria-label="Cerrar">×</button></div>`;
+
+// ── Cobro ──
+let cobro = {pago: 'Efectivo', recibido: 0};
+function abrirCobro() {
+  if (!state.ticket.length) return;
+  cobro = {pago: 'Efectivo', recibido: 0};
+  renderCobro();
+}
+function renderCobro() {
+  const total = totalTicket();
+  const cambio = cobro.recibido - total;
+  const billetes = [...new Set([total, 100, 200, 500].filter(b => b >= total))].slice(0, 4);
+  abrirHoja(`${hojaHead('Cobrar')}
+    <div class="big-total num">${fmt(total)}</div>
+    <div class="lbl" style="margin-bottom:6px">Forma de pago</div>
+    <div class="pay-opts">${PAGOS.map(p => `<button class="pay-opt ${p === cobro.pago ? 'on' : ''}" onclick="cobro.pago='${p}';renderCobro()">${p}</button>`).join('')}</div>
+    ${cobro.pago === 'Efectivo' ? `
+      <div class="field"><label class="lbl" for="recibido">Recibido</label>
+        <input id="recibido" type="number" inputmode="numeric" min="0" placeholder="${total}" value="${cobro.recibido || ''}" oninput="cobro.recibido=Number(this.value)||0;actualizarCambio()"></div>
+      <div class="bills">${billetes.map(b => `<button onclick="cobro.recibido=${b};renderCobro()">${b === total ? 'Exacto' : fmt(b)}</button>`).join('')}</div>
+      <div class="cambio"><span class="lbl">Cambio</span><b class="num" id="cambio">${cobro.recibido ? (cambio >= 0 ? fmt(cambio) : 'Falta ' + fmt(-cambio)) : '—'}</b></div>` : ''}
+    <button class="btn btn-go btn-block" onclick="confirmarVenta()">Registrar venta</button>`);
+}
+function actualizarCambio() {
+  const c = cobro.recibido - totalTicket();
+  $('cambio').textContent = cobro.recibido ? (c >= 0 ? fmt(c) : 'Falta ' + fmt(-c)) : '—';
+}
+function confirmarVenta() {
+  const total = totalTicket();
+  if (cobro.pago === 'Efectivo' && cobro.recibido && cobro.recibido < total) { toast('El efectivo recibido no alcanza el total'); return; }
+  const ahora = new Date();
+  const mov = {
+    type: 'ingreso', categoria: 'Venta',
+    concepto: state.ticket.map(l => `${l.qty}x ${l.name}`).join(', '),
+    items: state.ticket.map(({id, name, price, qty}) => ({id, name, price, qty})),
+    monto: total, pago: cobro.pago,
+    fecha: state.fecha, semana: lunesDe(state.fecha),
+    hora: ahora.toLocaleTimeString('es-MX', {hour:'2-digit', minute:'2-digit'}),
+    createdAt: ahora.getTime(),
+  };
+  if (cobro.pago === 'Efectivo' && cobro.recibido) { mov.recibido = cobro.recibido; mov.cambio = cobro.recibido - total; }
+  store.addMov(mov);   // sin await: la venta aparece al instante aunque el internet esté lento
+  const cambio = mov.cambio;
+  cerrarHoja(); vaciarTicket();
+  toast(`Venta registrada ${fmt(total)}${cambio ? ' · Cambio ' + fmt(cambio) : ''}`);
+}
+
+// ── Monto libre (teclado) ──
+let libre = {monto: '', concepto: ''};
+function abrirMontoLibre() { libre = {monto: '', concepto: ''}; renderLibre(); }
+function renderLibre() {
+  const teclas = ['1','2','3','4','5','6','7','8','9','C','0','⌫'];
+  abrirHoja(`${hojaHead('Monto libre')}
+    <div class="big-total num" id="libre-monto">${fmt(Number(libre.monto))}</div>
+    <div class="field"><label class="lbl" for="libre-conc">Concepto</label><input id="libre-conc" type="text" placeholder="Ej. Orden especial" value="${esc(libre.concepto)}" oninput="libre.concepto=this.value"></div>
+    <div class="keypad">${teclas.map(k => `<button onclick="teclaLibre('${k}')">${k}</button>`).join('')}</div>
+    <button class="btn btn-go btn-block" onclick="agregarLibre()">Agregar al ticket</button>`);
+}
+function teclaLibre(k) {
+  if (k === 'C') libre.monto = ''; else if (k === '⌫') libre.monto = libre.monto.slice(0, -1); else if (libre.monto.length < 6) libre.monto += k;
+  $('libre-monto').textContent = fmt(Number(libre.monto));
+}
+function agregarLibre() {
+  const m = Number(libre.monto); if (!m) { toast('Escribe un monto'); return; }
+  state.ticket.push({key: 'libre_' + uid(), id: 'libre', name: libre.concepto.trim() || 'Monto libre', price: m, qty: 1});
+  cerrarHoja(); renderTicket();
+}
+
+// ════════════════════════════════════════════════════════════════
+//  PRODUCTOS (registro con botones)
+// ════════════════════════════════════════════════════════════════
+function renderProductos() {
+  const lista = [...state.productos].sort((a,b) => (a.orden||0) - (b.orden||0));
+  $('seed-note').hidden = !lista.some(p => SEED.some(s => s.id === p.id && s.price === p.price && s.name === p.name));
+  $('plist').innerHTML = lista.length ? lista.map((p, i) => `
+    <div class="pitem ${p.activo === false ? 'off' : ''}">
+      <div class="chipc" style="background:var(--t-${p.color || 'gris'})">${esc(p.emoji || '')}</div>
+      <div class="info" onclick="abrirProducto('${p.id}')" style="cursor:pointer"><b>${esc(p.name)}</b><span class="num">${fmt(p.price)} · ${esc(p.cat || '')}${p.activo === false ? ' · oculto' : ''}</span></div>
+      <div class="acts">
+        <button class="icon-btn" onclick="moverProducto('${p.id}',-1)" ${i === 0 ? 'disabled' : ''} aria-label="Subir">↑</button>
+        <button class="icon-btn" onclick="moverProducto('${p.id}',1)" ${i === lista.length - 1 ? 'disabled' : ''} aria-label="Bajar">↓</button>
+        <button class="icon-btn" onclick="abrirProducto('${p.id}')" aria-label="Editar">✎</button>
+      </div>
+    </div>`).join('') : '<div class="empty">Aún no hay productos. Crea el primero con “Nuevo producto”.</div>';
+}
+
+let edicion = null; // producto en edición
+function abrirProducto(id) {
+  const p = state.productos.find(x => x.id === id);
+  edicion = p ? {...p, _nuevo: false, _borrar: false}
+              : {id: 'p_' + uid(), name: '', price: '', color: 'verde', emoji: '', cat: CATS_PROD[0], activo: true,
+                 orden: Math.max(0, ...state.productos.map(x => x.orden || 0)) + 1, _nuevo: true, _borrar: false};
+  renderEdicion();
+}
+function renderEdicion() {
+  const e = edicion;
+  abrirHoja(`${hojaHead(e._nuevo ? 'Nuevo producto' : 'Editar producto')}
+    <div class="tile" style="background:var(--t-${e.color});margin-bottom:14px;cursor:default;min-height:90px;max-width:180px" aria-hidden="true">
+      <span class="em">${esc(e.emoji)}</span><span><span class="nm">${esc(e.name) || 'Nombre'}</span><br><span class="pr num">${fmt(Number(e.price))}</span></span>
+    </div>
+    <div class="field"><label class="lbl" for="pe-name">Nombre</label><input id="pe-name" type="text" maxlength="28" value="${esc(e.name)}" oninput="edicion.name=this.value" onchange="renderEdicion()" placeholder="Ej. Verdes con pollo"></div>
+    <div class="row2">
+      <div class="field"><label class="lbl" for="pe-price">Precio</label><input id="pe-price" type="number" inputmode="decimal" min="0" value="${e.price}" oninput="edicion.price=this.value" onchange="renderEdicion()"></div>
+      <div class="field"><label class="lbl" for="pe-emoji">Emoji (opcional)</label><input id="pe-emoji" type="text" maxlength="4" value="${esc(e.emoji)}" oninput="edicion.emoji=this.value" onchange="renderEdicion()"></div>
+    </div>
+    <div class="field"><label class="lbl" for="pe-cat">Categoría</label><select id="pe-cat" onchange="edicion.cat=this.value">${CATS_PROD.map(c => `<option ${c === e.cat ? 'selected' : ''}>${c}</option>`).join('')}</select></div>
+    <div class="field"><span class="lbl">Color del botón</span><div class="swatches">${COLORES.map(c => `<button class="sw ${c === e.color ? 'on' : ''}" style="background:var(--t-${c})" onclick="edicion.color='${c}';renderEdicion()" aria-label="${c}"></button>`).join('')}</div></div>
+    <label class="check"><input type="checkbox" id="pe-activo" ${e.activo !== false ? 'checked' : ''} onchange="edicion.activo=this.checked"> Mostrar en la pantalla de venta</label>
+    <button class="btn btn-go btn-block" onclick="guardarProducto()">Guardar</button>
+    ${e._nuevo ? '' : (e._borrar
+      ? `<div style="display:flex;gap:8px;margin-top:10px"><button class="btn btn-ghost" style="flex:1" onclick="edicion._borrar=false;renderEdicion()">Cancelar</button><button class="btn btn-danger" style="flex:1" onclick="borrarProducto()">Sí, eliminar</button></div>`
+      : `<button class="btn btn-danger btn-block" style="margin-top:10px" onclick="edicion._borrar=true;renderEdicion()">Eliminar producto</button>`)}`);
+}
+function guardarProducto() {
+  const e = edicion;
+  const name = (e.name || '').trim(), price = Number(e.price);
+  if (!name) { toast('Ponle nombre al producto'); return; }
+  if (!(price >= 0) || e.price === '') { toast('Escribe un precio válido'); return; }
+  const {_nuevo, _borrar, ...p} = {...e, name, price};
+  store.saveProducto(p);
+  cerrarHoja(); toast(_nuevo ? 'Producto creado' : 'Producto actualizado');
+}
+function borrarProducto() { store.deleteProducto(edicion.id); cerrarHoja(); toast('Producto eliminado'); }
+function moverProducto(id, d) {
+  const lista = [...state.productos].sort((a,b) => (a.orden||0) - (b.orden||0));
+  const i = lista.findIndex(p => p.id === id), j = i + d;
+  if (j < 0 || j >= lista.length) return;
+  [lista[i], lista[j]] = [lista[j], lista[i]];
+  lista.forEach((p, k) => { if (p.orden !== k + 1) store.saveProducto({...p, orden: k + 1}); });
+}
+
+// ════════════════════════════════════════════════════════════════
+//  GASTOS
+// ════════════════════════════════════════════════════════════════
+function renderQuickGastos() {
+  const cat = $('g-cat').value;
+  const sugs = GASTO_CATS[cat] || [];
+  $('g-quick').innerHTML = sugs.length ? sugs.map(s => `<button class="qbtn" onclick="addGastoRow('${esc(s)}')">${esc(s)}</button>`).join('')
+    : '<span class="hint" style="grid-column:1/-1">Usa “Agregar renglón” y escribe el concepto.</span>';
+}
+function addGastoRow(concepto) {
+  const ex = concepto && state.gastoRows.find(r => r.concepto === concepto);
+  if (ex) { ex.cant = (Number(ex.cant) || 0) + 1; }
+  else state.gastoRows.push({id: uid(), concepto, cant: 1, pu: ''});
+  renderGastoRows();
+  if (!concepto) setTimeout(() => { const ins = document.querySelectorAll('#g-rows input[data-f="concepto"]'); ins[ins.length - 1]?.focus(); }, 0);
+  else { const r = state.gastoRows.find(r => r.concepto === concepto); setTimeout(() => $('pu-' + r.id)?.focus(), 0); }
+}
+function setGasto(id, f, v) { const r = state.gastoRows.find(x => x.id === id); if (!r) return; r[f] = v; const t = (Number(r.cant)||0) * (Number(r.pu)||0); $('tt-' + id).textContent = t ? fmt(t) : '—'; totalGastos(); }
+function delGasto(id) { state.gastoRows = state.gastoRows.filter(r => r.id !== id); renderGastoRows(); }
+function renderGastoRows() {
+  $('g-rows').innerHTML = state.gastoRows.length ? state.gastoRows.map(r => {
+    const t = (Number(r.cant)||0) * (Number(r.pu)||0);
+    return `<div class="grow">
+      <input data-f="concepto" aria-label="Concepto" value="${esc(r.concepto)}" oninput="setGasto('${r.id}','concepto',this.value)" placeholder="Concepto">
+      <input type="number" inputmode="decimal" aria-label="Cantidad" value="${r.cant}" oninput="setGasto('${r.id}','cant',this.value)">
+      <input id="pu-${r.id}" type="number" inputmode="decimal" aria-label="Precio por unidad" value="${r.pu}" oninput="setGasto('${r.id}','pu',this.value)" placeholder="$">
+      <span class="tt num" id="tt-${r.id}">${t ? fmt(t) : '—'}</span>
+      <button class="del" onclick="delGasto('${r.id}')" aria-label="Quitar renglón">×</button>
+    </div>`;
+  }).join('') : '<div class="empty">Toca un insumo de arriba o agrega un renglón.</div>';
+  totalGastos();
+}
+function totalGastos() {
+  const validos = state.gastoRows.filter(r => (Number(r.cant)||0) * (Number(r.pu)||0) > 0);
+  $('g-total').textContent = fmt(validos.reduce((s, r) => s + Number(r.cant) * Number(r.pu), 0));
+  $('g-count').textContent = `${validos.length} concepto${validos.length === 1 ? '' : 's'}`;
+}
+function guardarGastos() {
+  const validos = state.gastoRows.filter(r => r.concepto.trim() && (Number(r.cant)||0) * (Number(r.pu)||0) > 0);
+  if (!validos.length) { toast('Agrega al menos un gasto con concepto y precio'); return; }
+  const ahora = new Date(), cat = $('g-cat').value, pago = $('g-pago').value;
+  validos.forEach((r, i) => store.addMov({
+    type: 'egreso', categoria: cat, pago,
+    concepto: Number(r.cant) !== 1 ? `${r.concepto.trim()} (${r.cant} × ${fmt(r.pu)})` : r.concepto.trim(),
+    monto: Number(r.cant) * Number(r.pu),
+    fecha: state.fecha, semana: lunesDe(state.fecha),
+    hora: ahora.toLocaleTimeString('es-MX', {hour:'2-digit', minute:'2-digit'}),
+    createdAt: ahora.getTime() + i,
+  }));
+  const tot = validos.reduce((s, r) => s + Number(r.cant) * Number(r.pu), 0);
+  state.gastoRows = []; renderGastoRows();
+  toast(`${validos.length} gasto${validos.length === 1 ? '' : 's'} guardado${validos.length === 1 ? '' : 's'} · ${fmt(tot)}`);
+}
+
+// ════════════════════════════════════════════════════════════════
+//  BITÁCORA
+// ════════════════════════════════════════════════════════════════
+function renderLog() {
+  const f = $('log-filter').value;
+  let lista = [...state.movs];
+  if (f === 'dia') lista = lista.filter(m => m.fecha === state.fecha);
+  if (f === 'ingreso' || f === 'egreso') lista = lista.filter(m => m.type === f);
+  lista.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+  $('log').innerHTML = lista.length ? lista.map(m => `
+    <div class="lrow" onclick="abrirMov('${m._id}')">
+      <span class="d" style="background:var(${m.type === 'ingreso' ? '--ok' : '--bad'})"></span>
+      <div style="min-width:0"><div class="c">${esc(m.concepto)}</div><div class="m">${DIAS[parseFecha(m.fecha).getDay()].slice(0,3)} ${m.fecha.slice(8)}/${m.fecha.slice(5,7)} · ${esc(m.hora || '')} · ${esc(m.pago)} · ${esc(m.categoria)}</div></div>
+      <span class="a num ${m.type === 'ingreso' ? 'pos' : 'neg'}">${m.type === 'ingreso' ? '+' : '−'}${fmt(m.monto)}</span>
+    </div>`).join('') : '<div class="empty">Sin movimientos en este periodo.</div>';
+}
+let movEd = null;
+function abrirMov(id) { const m = state.movs.find(x => x._id === id); if (!m) return; movEd = {...m, _borrar: false}; renderMov(); }
+function renderMov() {
+  const m = movEd;
+  abrirHoja(`${hojaHead(m.type === 'ingreso' ? 'Venta' : 'Gasto')}
+    <div class="field"><label class="lbl" for="me-conc">Concepto</label><input id="me-conc" type="text" value="${esc(m.concepto)}" oninput="movEd.concepto=this.value"></div>
+    <div class="row2">
+      <div class="field"><label class="lbl" for="me-monto">Monto</label><input id="me-monto" type="number" inputmode="decimal" value="${m.monto}" oninput="movEd.monto=this.value"></div>
+      <div class="field"><label class="lbl" for="me-pago">Forma de pago</label><select id="me-pago" onchange="movEd.pago=this.value">${PAGOS.map(p => `<option ${p === m.pago ? 'selected' : ''}>${p}</option>`).join('')}</select></div>
+    </div>
+    <div class="field"><label class="lbl" for="me-fecha">Fecha</label><input id="me-fecha" type="date" value="${m.fecha}" oninput="movEd.fecha=this.value"></div>
+    <button class="btn btn-go btn-block" onclick="guardarMov()">Guardar cambios</button>
+    ${m._borrar
+      ? `<div style="display:flex;gap:8px;margin-top:10px"><button class="btn btn-ghost" style="flex:1" onclick="movEd._borrar=false;renderMov()">Cancelar</button><button class="btn btn-danger" style="flex:1" onclick="borrarMov()">Sí, eliminar</button></div>`
+      : `<button class="btn btn-danger btn-block" style="margin-top:10px" onclick="movEd._borrar=true;renderMov()">Eliminar movimiento</button>`}`);
+}
+function guardarMov() {
+  const m = movEd, monto = Number(m.monto);
+  if (!(monto > 0)) { toast('El monto debe ser mayor a 0'); return; }
+  store.updateMov(m._id, {concepto: m.concepto.trim(), monto, pago: m.pago, fecha: m.fecha, semana: lunesDe(m.fecha)});
+  cerrarHoja(); toast('Movimiento actualizado');
+}
+function borrarMov() { store.deleteMov(movEd._id); cerrarHoja(); toast('Movimiento eliminado'); }
+
+// ════════════════════════════════════════════════════════════════
+//  DASHBOARD
+// ════════════════════════════════════════════════════════════════
+function barras(obj, rojo) {
+  const arr = Object.entries(obj).sort((a, b) => b[1] - a[1]);
+  if (!arr.length) return '<div class="hint">Sin datos esta semana.</div>';
+  const max = arr[0][1] || 1;
+  return arr.map(([k, v]) => `<div class="hrow"><span class="n">${esc(k)}</span><span class="val num">${fmt(v)}</span><div class="track"><div class="fill ${rojo ? 'r' : ''}" style="width:${(v / max * 100).toFixed(1)}%"></div></div></div>`).join('');
+}
+function renderDash() {
+  const lunes = lunesDe(state.fecha);
+  const ing = state.movs.filter(m => m.type === 'ingreso');
+  const egr = state.movs.filter(m => m.type === 'egreso');
+  const tIng = ing.reduce((s, m) => s + Number(m.monto), 0);
+  const tEgr = egr.reduce((s, m) => s + Number(m.monto), 0);
+  const util = tIng - tEgr;
+  const vie = sumarDias(lunes, 4);
+  $('dash-title').textContent = `Semana del ${parseFecha(lunes).getDate()} al ${parseFecha(vie).toLocaleDateString('es-MX', {day:'numeric', month:'long'})}`;
+  $('k-util').textContent = (util < 0 ? '−' : '') + fmt(Math.abs(util));
+  $('k-util').className = 'v num ' + (util >= 0 ? 'pos' : 'neg');
+  $('k-util-s').textContent = tIng ? `Margen ${Math.round(util / tIng * 100)}%` : 'Sin ventas aún';
+  $('k-ing').textContent = fmt(tIng);
+  $('k-gas').textContent = fmt(tEgr);
+  $('k-ven').textContent = ing.length;
+  $('k-tp').textContent = fmt(ing.length ? tIng / ing.length : 0);
+
+  // Lunes a viernes (+ sábado/domingo solo si hubo movimientos)
+  let dias = [0,1,2,3,4].map(i => sumarDias(lunes, i));
+  [5,6].forEach(i => { const f = sumarDias(lunes, i); if (state.movs.some(m => m.fecha === f)) dias.push(f); });
+  const porDia = dias.map(f => ing.filter(m => m.fecha === f).reduce((s, m) => s + Number(m.monto), 0));
+  const max = Math.max(...porDia, 1);
+  $('d-days').style.setProperty('--n', dias.length);
+  $('d-days').innerHTML = dias.map((f, i) => `<div class="dcol">
+      <span class="amt num">${porDia[i] ? fmt(porDia[i]) : ''}</span>
+      <div class="bar ${f === state.fecha ? 'sel' : ''}" style="height:${(porDia[i] / max * 100 * 0.78).toFixed(1)}%"></div>
+      <span class="dn">${DIAS[parseFecha(f).getDay()].slice(0,3)}</span><span class="dd">${f.slice(8)}</span>
+    </div>`).join('');
+
+  // Productos: cantidad y dinero
+  const prods = {};
+  ing.forEach(m => (m.items || []).forEach(it => {
+    const k = it.name; prods[k] = prods[k] || {q: 0, v: 0}; prods[k].q += it.qty; prods[k].v += it.qty * it.price;
+  }));
+  const pArr = Object.entries(prods).sort((a, b) => b[1].q - a[1].q).slice(0, 8);
+  const pMax = pArr.length ? pArr[0][1].q : 1;
+  $('d-prods').innerHTML = pArr.length ? pArr.map(([k, o]) => `<div class="hrow"><span class="n">${esc(k)}</span><span class="val num">${o.q} · ${fmt(o.v)}</span><div class="track"><div class="fill" style="width:${(o.q / pMax * 100).toFixed(1)}%"></div></div></div>`).join('') : '<div class="hint">Sin ventas esta semana.</div>';
+
+  const pagos = {}; ing.forEach(m => pagos[m.pago] = (pagos[m.pago] || 0) + Number(m.monto));
+  $('d-pagos').innerHTML = barras(pagos);
+  const cats = {}; egr.forEach(m => cats[m.categoria] = (cats[m.categoria] || 0) + Number(m.monto));
+  $('d-cats').innerHTML = barras(cats, true);
+}
+
+// ════════════════════════════════════════════════════════════════
+//  ARRANQUE
+// ════════════════════════════════════════════════════════════════
+(async function init() {
+  $('brand-name').textContent = NEGOCIO;
+  $('g-cat').innerHTML = Object.keys(GASTO_CATS).map(c => `<option>${c}</option>`).join('');
+  $('g-pago').innerHTML = PAGOS.map(p => `<option>${p}</option>`).join('');
+  $('fecha').value = state.fecha;
+  $('dia-label').textContent = DIAS[parseFecha(state.fecha).getDay()];
+
+  if (SUPABASE) {
+    try { store = crearStoreSupabase(SUPABASE); }
+    catch (e) { console.error(e); toast('No se pudo conectar a Supabase. Usando modo local.'); store = crearStoreLocal(); }
+  } else store = crearStoreLocal();
+  if (store.modo === 'local') { const b = document.createElement('span'); b.className = 'modo'; b.textContent = 'Modo local'; b.title = 'Los datos se guardan solo en este navegador'; $('brand-name').after(b); sync('synced'); }
+
+  store.onProductos(ps => { state.productos = ps; renderChips(); renderTiles(); if ($('sec-prods').classList.contains('on')) renderProductos(); });
+  suscribirSemana();
+  renderTicket(); renderQuickGastos(); renderGastoRows();
+})();
+</script>
